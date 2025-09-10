@@ -7,7 +7,7 @@ description = "Serde implementation of OMG Common Data Representation (CDR) enco
 readme = "README.md"
 keywords = ["network","protocol","dds","rtps"]
 license = "Apache-2.0"
-homepage = "https://atostek.com/en/products/rustdds/"  
+homepage = "https://atostek.com/en/products/rustdds/"
 repository = "https://github.com/jhelovuo/cdr-encoding"
 
 [workspace]
@@ -19,7 +19,7 @@ members = [
 ]
 
 
-# Although cdr-encoding, cdr-encoding-size, and cdr-encoding-size-derive 
+# Although cdr-encoding, cdr-encoding-size, and cdr-encoding-size-derive
 # are relaed semantically,
 # the main crate cdr-encoding does not technically depend on the two others.
 #
