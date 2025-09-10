@@ -321,6 +321,9 @@ where
   }
 
   fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+    // Write length prefix
+    self.writer.write_all(&v.len().to_le_bytes())?;
+    // Write raw bytes
     self.writer.write_all(v)?;
     Ok(())
   }

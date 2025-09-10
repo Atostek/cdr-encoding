@@ -267,7 +267,15 @@ where
   where
     V: Visitor<'de>,
   {
-    self.deserialize_seq(visitor)
+    // Align to 4 bytes
+    self.calculate_padding_count_from_written_bytes_and_remove(4)?;
+    // Length prefix
+    let len = self.next_bytes(4)?.read_u32::<BO>().unwrap() as usize;
+    // Read the entire buffer at once
+    let buf = self.next_bytes(len)?.to_vec();
+
+    visitor.visit_byte_buf(buf)
+
   }
 
   fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
