@@ -322,7 +322,7 @@ where
 
   fn serialize_bytes(self, v: &[u8]) -> Result<()> {
     // Write length prefix
-    self.writer.write_all(&v.len().to_le_bytes())?;
+    self.serialize_u32(v.len() as u32)?;
     // Write raw bytes
     self.writer.write_all(v)?;
     Ok(())
