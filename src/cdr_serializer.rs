@@ -321,6 +321,7 @@ where
   }
 
   fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+    self.serialize_u32(v.len() as u32)?;
     self.writer.write_all(v)?;
     Ok(())
   }
