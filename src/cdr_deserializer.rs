@@ -1081,4 +1081,15 @@ mod tests {
     assert_eq!(input, deserialized);
     assert_eq!(serialized.len(), bytes_consumed);
   }
+
+  #[test]
+  fn cdr_serde_seq_serialized_bytes_deserializable_via_bytes_path() {
+    // Data serialized as Vec<u8> (seq path) must be deserializable via serde_bytes (bytes path).
+    let input: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+    let serialized = to_vec::<_, LittleEndian>(&input).unwrap();
+    let (deserialized, bytes_consumed): (serde_bytes::ByteBuf, usize) =
+      from_bytes::<serde_bytes::ByteBuf, LittleEndian>(&serialized).unwrap();
+    assert_eq!(input, deserialized.as_ref());
+    assert_eq!(serialized.len(), bytes_consumed);
+  }
 }
