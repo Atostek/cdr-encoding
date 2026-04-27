@@ -34,3 +34,4 @@ static_assertions = "1.1"
 
 [dev-dependencies]
 test-case = "3.1.0"
+serde_bytes = "0.11"
