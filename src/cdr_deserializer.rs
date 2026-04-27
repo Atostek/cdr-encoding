@@ -5,7 +5,7 @@ use byteorder::{BigEndian, LittleEndian};
 use byteorder::{ByteOrder, ReadBytesExt};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
-use paste::paste;
+use pastey::paste;
 #[cfg(test)]
 use serde::de::DeserializeOwned;
 use serde::de::{
