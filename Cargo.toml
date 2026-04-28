@@ -15,7 +15,7 @@ resolver = "2"
 members = [".", "cdr-encoding-size", "cdr-encoding-size-derive"]
 
 
-# Although cdr-encoding, cdr-encoding-size, and cdr-encoding-size-derive 
+# Although cdr-encoding, cdr-encoding-size, and cdr-encoding-size-derive
 # are related semantically,
 # the main crate cdr-encoding does not technically depend on the two others.
 #
