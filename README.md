@@ -7,3 +7,7 @@ See [Wikipedia](https://en.wikipedia.org/wiki/Common_Data_Representation) or
 
 This is also a part of the full XTYPES [specification](https://www.omg.org/spec/DDS-XTypes/1.2/PDF).
 XTYPES specifies several encodings, of which this implemention is only for "plain" CDR.
+
+# Version 0.11
+
+This version breaks compatibility to previous versions. The deserializer can now borrow bytes.
