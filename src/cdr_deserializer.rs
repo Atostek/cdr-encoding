@@ -43,7 +43,7 @@ where
   }
 
   /// Read the first bytes in the input.
-  fn next_bytes(&mut self, count: usize) -> Result<&[u8]> {
+  fn next_bytes(&mut self, count: usize) -> Result<&'de [u8]> {
     if count <= self.input.len() {
       let (head, tail) = self.input.split_at(count);
       self.input = tail;
@@ -78,7 +78,7 @@ where
 /// implementation.
 ///
 /// return deserialized object + count of bytes consumed
-pub fn from_bytes<'de, T, BO>(input_bytes: &[u8]) -> Result<(T, usize)>
+pub fn from_bytes<'de, T, BO>(input_bytes: &'de [u8]) -> Result<(T, usize)>
 where
   T: serde::Deserialize<'de>,
   BO: ByteOrder,
@@ -89,7 +89,7 @@ where
 /// Deserialize type based on a [`serde::Deserialize`] implementation.
 ///
 /// return deserialized object + count of bytes consumed
-pub fn from_bytes_with<'de, S, BO>(input_bytes: &[u8], decoder: S) -> Result<(S::Value, usize)>
+pub fn from_bytes_with<'de, S, BO>(input_bytes: &'de [u8], decoder: S) -> Result<(S::Value, usize)>
 where
   S: DeserializeSeed<'de>,
   BO: ByteOrder,
@@ -138,6 +138,7 @@ macro_rules! deserialize_multibyte_number {
 
 impl<'de, 'a, 'c, BO> de::Deserializer<'de> for &'a mut CdrDeserializer<'c, BO>
 where
+  'c: 'de,
   BO: ByteOrder,
 {
   type Error = Error;
@@ -260,7 +261,10 @@ where
   where
     V: Visitor<'de>,
   {
-    self.deserialize_seq(visitor)
+    self.calculate_padding_count_from_written_bytes_and_remove(4)?;
+    let len = self.next_bytes(4)?.read_u32::<BO>().unwrap() as usize;
+    let bytes = self.next_bytes(len)?;
+    visitor.visit_borrowed_bytes(bytes)
   }
 
   fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
@@ -426,8 +430,9 @@ where
   }
 }
 
-impl<'de, 'a, BO> EnumAccess<'de> for EnumerationHelper<'a, '_, BO>
+impl<'de, 'a, 'i, BO> EnumAccess<'de> for EnumerationHelper<'a, 'i, BO>
 where
+  'i: 'de,
   BO: ByteOrder,
 {
   type Error = Error;
@@ -446,8 +451,9 @@ where
 
 // ----------------------------------------------------------
 
-impl<'de, 'a, BO> VariantAccess<'de> for EnumerationHelper<'a, '_, BO>
+impl<'de, 'a, 'i, BO> VariantAccess<'de> for EnumerationHelper<'a, 'i, BO>
 where
+  'i: 'de,
   BO: ByteOrder,
 {
   type Error = Error;
@@ -498,8 +504,9 @@ impl<'a, 'i, BO> SequenceHelper<'a, 'i, BO> {
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'a, 'de, BO> SeqAccess<'de> for SequenceHelper<'a, '_, BO>
+impl<'a, 'de, 'i, BO> SeqAccess<'de> for SequenceHelper<'a, 'i, BO>
 where
+  'i: 'de,
   BO: ByteOrder,
 {
   type Error = Error;
@@ -519,8 +526,9 @@ where
 
 // `MapAccess` is provided to the `Visitor` to give it the ability to iterate
 // through entries of the map.
-impl<'de, 'a, BO> MapAccess<'de> for SequenceHelper<'a, '_, BO>
+impl<'de, 'a, 'i, BO> MapAccess<'de> for SequenceHelper<'a, 'i, BO>
 where
+  'i: 'de,
   BO: ByteOrder,
 {
   type Error = Error;
@@ -1011,17 +1019,85 @@ mod tests {
     assert_eq!(serialized.len(), bytes_consumed);
   }
 
-  /*
   #[test]
-  fn cdr_deserialization_bytes(){
-    let mut buf = B::with_capacity(1024);
-    buf.put(&b"hello world"[..]);
-    buf.put_u16(1234);
-
-    let ubuf = buf.into(u8);
-    let mut serialized = to_little_endian_binary(&ubuf).unwrap();
-    let deserialized : Vec<u8> = deserialize_from_little_endian(&mut serialized).unwrap();
-
+  fn cdr_serde_round_trip_bytes() {
+    let input: serde_bytes::ByteBuf = serde_bytes::ByteBuf::from(vec![1u8, 2, 3, 4, 5]);
+    let serialized = to_vec::<_, LittleEndian>(&input).unwrap();
+    // Wire format: 4-byte LE length prefix (5) + 5 raw bytes
+    assert_eq!(
+      serialized,
+      vec![0x05, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05]
+    );
+    let (deserialized, bytes_consumed): (serde_bytes::ByteBuf, usize) =
+      from_bytes::<serde_bytes::ByteBuf, LittleEndian>(&serialized).unwrap();
+    assert_eq!(input, deserialized);
+    assert_eq!(serialized.len(), bytes_consumed);
   }
-  */
+
+  #[test]
+  fn cdr_serde_round_trip_bytes_empty() {
+    let input: serde_bytes::ByteBuf = serde_bytes::ByteBuf::from(vec![]);
+    let serialized = to_vec::<_, LittleEndian>(&input).unwrap();
+    // Wire format: just 4-byte LE length prefix (0)
+    assert_eq!(serialized, vec![0x00, 0x00, 0x00, 0x00]);
+    let (deserialized, bytes_consumed): (serde_bytes::ByteBuf, usize) =
+      from_bytes::<serde_bytes::ByteBuf, LittleEndian>(&serialized).unwrap();
+    assert_eq!(input, deserialized);
+    assert_eq!(serialized.len(), bytes_consumed);
+  }
+
+  #[test]
+  fn cdr_serde_round_trip_borrowed_bytes() {
+    // Wire format: u32 LE length (3) followed by 3 payload bytes
+    let raw = vec![0x03, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC];
+    let (deserialized, bytes_consumed): (&serde_bytes::Bytes, usize) =
+      from_bytes::<&serde_bytes::Bytes, LittleEndian>(&raw).unwrap();
+    assert_eq!(deserialized.as_ref(), &[0xAA, 0xBB, 0xCC]);
+    assert_eq!(bytes_consumed, 7);
+  }
+
+  #[test]
+  fn cdr_serde_round_trip_bytes_in_struct() {
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+    struct WithBytes {
+      id: u32,
+      #[serde(with = "serde_bytes")]
+      payload: Vec<u8>,
+      tag: u8,
+    }
+
+    let input = WithBytes {
+      id: 42,
+      payload: vec![0xDE, 0xAD, 0xBE, 0xEF],
+      tag: 7,
+    };
+    let serialized = to_vec::<_, LittleEndian>(&input).unwrap();
+    let (deserialized, bytes_consumed): (WithBytes, usize) =
+      from_bytes::<WithBytes, LittleEndian>(&serialized).unwrap();
+    assert_eq!(input, deserialized);
+    assert_eq!(serialized.len(), bytes_consumed);
+  }
+
+  #[test]
+  fn cdr_serde_vec_u8_still_works_via_seq() {
+    // Plain Vec<u8> (without serde_bytes) goes through serialize_seq/deserialize_seq,
+    // not serialize_bytes/deserialize_bytes. Confirm this path still works.
+    let input: Vec<u8> = vec![10, 20, 30];
+    let serialized = to_vec::<_, LittleEndian>(&input).unwrap();
+    let (deserialized, bytes_consumed): (Vec<u8>, usize) =
+      from_bytes::<Vec<u8>, LittleEndian>(&serialized).unwrap();
+    assert_eq!(input, deserialized);
+    assert_eq!(serialized.len(), bytes_consumed);
+  }
+
+  #[test]
+  fn cdr_serde_seq_serialized_bytes_deserializable_via_bytes_path() {
+    // Data serialized as Vec<u8> (seq path) must be deserializable via serde_bytes (bytes path).
+    let input: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+    let serialized = to_vec::<_, LittleEndian>(&input).unwrap();
+    let (deserialized, bytes_consumed): (serde_bytes::ByteBuf, usize) =
+      from_bytes::<serde_bytes::ByteBuf, LittleEndian>(&serialized).unwrap();
+    assert_eq!(input, deserialized.as_ref());
+    assert_eq!(serialized.len(), bytes_consumed);
+  }
 }
